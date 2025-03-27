@@ -44,33 +44,63 @@ encoding_columns:
   - Seasonality
 
 train_test_split:
-  split_by: percentage
   split_value: 0.7
-  id_column: Product ID
-  time_index_column: Week
+  #id_column: Product ID
+  #time_index_column: Week
   target_column: Units Sold
-  future_covariate_columns:
-    - Weather Condition
-    - Holiday/Promotion
-    - Seasonality
-  past_covariate_columns: []
+  past_covariate_columns: [Weather Condition]
+  future_covariate_columns: [Holiday/Promotion, Seasonality]
 
 data_file_path: data/retail_store_inventory.csv
 
-model_config: 
-  model_type: RNNModel
-  rnn_model:
-    input_chunk_length: 12  # Number of time steps to consider in the past
-    training_length: 16  # Number of time steps to train the model (duration of historical data + forecast horizon) 
-    n_epochs: 25   # To reduce training time (default: 100)
+model_configurations:
+  ARIMA:
     add_encoders:
-      cyclic:
-        future: ["month"]
-      datetime_attribute:
-        future: ["year", "month", "weekofyear"]
-    pl_trainer_kwargs:
-      accelerator: auto
-  forecasting:
-    forecast_horizon: 4
-    stride: 1
-    retrain: false
+      cyclic: { future: ["month"] }
+    extra_args: {}
+
+  Prophet:
+    country_holidays: SG
+    add_seasonalities:
+      - name: monthly
+        seasonal_periods: 4.33
+        fourier_order: 5
+    add_encoders:
+      cyclic: { future: ["month"] }
+    extra_args: {}
+
+  RandomForest:
+    lags: 4
+    lags_past_covariates: 12
+    lags_future_covariates: [0, 1, 2, 3]
+    output_chunk_length: 4
+    add_encoders:
+      cyclic: { future: ["month"] }
+    extra_args: {}
+
+  TCNModel:
+    input_chunk_length: 12
+    output_chunk_length: 4
+    add_encoders:
+      cyclic: { future: ["month"] }
+    extra_args: {}
+
+  NBEATSModel:
+    input_chunk_length: 12
+    output_chunk_length: 4
+    n_epochs: 20
+    add_encoders:
+      cyclic: { future: ["month"] }
+    extra_args: {}
+
+  RNNModel:
+    input_chunk_length: 12
+    training_length: 16
+    model: LSTM
+    likelihood: GaussianLikelihood
+    random_state: 42
+    add_encoders:
+      cyclic: { future: ["month"] }
+      datetime_attribute: { future: ["year", "month", "weekofyear"] }
+    extra_args:
+      n_epochs: 50

@@ -1,7 +1,6 @@
 from pipelines.data_pipeline import load_and_process_data
 from pipelines.scaling_pipeline import scale_time_series_lists
-from pipelines.model_pipeline import train_and_evaluate_rnn_model
-from pipelines.save_results import save_forecast_and_metrics
+from pipelines.model_pipeline import train_and_evaluate_models
 import yaml
 import numpy as np
 
@@ -22,6 +21,7 @@ def main():
     train_series_list = []
     test_series_list = []
     future_covariates_list = []
+    past_covariates_list = []
 
     # Convert processed df into timeseries and split
     for product_id in processed_df['Product ID'].unique():
@@ -29,6 +29,7 @@ def main():
 
         target_series = TimeSeries.from_dataframe(df_product, value_cols=[train_test_cfg['target_column']])
         future_covariates = TimeSeries.from_dataframe(df_product, value_cols=train_test_cfg['future_covariate_columns'])
+        past_covariates = TimeSeries.from_dataframe(df_product, value_cols=train_test_cfg.get('past_covariate_columns', []))
 
         split_idx = int(len(target_series) * train_test_cfg['split_value'])
         split_point = target_series.time_index[split_idx]
@@ -37,31 +38,27 @@ def main():
         train_series_list.append(train_ts.astype(np.float32))
         test_series_list.append(test_ts.astype(np.float32))
         future_covariates_list.append(future_covariates.astype(np.float32))
+        past_covariates_list.append(past_covariates.astype(np.float32))
 
-    # Scale time series and covariates independently (per-series scaling)
-    train_series_scaled, test_series_scaled, future_covariates_scaled, _, _ = scale_time_series_lists(
-        train_series_list, test_series_list, future_covariates_list, config=None
+    full_series_list = [train.append(test) for train, test in zip(train_series_list, test_series_list)]
+
+    # Scale time series and covariates
+    train_series_scaled, test_series_scaled, future_covariates_scaled, past_covariates_scaled, scalers = scale_time_series_lists(
+        train_series_list, test_series_list, future_covariates_list, past_covariates_list, config=None
     )
 
     full_series_scaled_list = [train.append(test) for train, test in zip(train_series_scaled, test_series_scaled)]
 
-    # Train global model on scaled series and covariates without using data_transformers
-    forecasts, mape_scores, rmse_scores = train_and_evaluate_rnn_model(
-        train_series_scaled_list=train_series_scaled,
-        test_series_scaled_list=test_series_scaled,
-        full_series_scaled_list=full_series_scaled_list,
-        full_future_covariates_scaled_list=future_covariates_scaled,
-        output_dir='models/saved_models',
+    # Train and evaluate all models
+    train_and_evaluate_models(
+        train_series_scaled=train_series_scaled,
+        test_series_scaled=test_series_scaled,
+        full_series_scaled=full_series_scaled_list,
+        future_covariates_scaled=future_covariates_scaled,
+        past_covariates_scaled=past_covariates_scaled,
+        scalers=scalers,
+        output_dir='results/forecasts',
         yaml_config_path=yaml_config_path
-    )
-
-    # Save results
-    save_forecast_and_metrics(
-        forecast_series_list=forecasts,
-        test_series_list=test_series_scaled,
-        mape_scores=mape_scores,
-        rmse_scores=rmse_scores,
-        output_dir='results/forecasts'
     )
 
 
