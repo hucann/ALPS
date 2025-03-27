@@ -1,0 +1,76 @@
+columns_to_drop:
+  - Store ID
+  - Category
+  - Region
+  - Inventory Level
+  - Units Ordered
+  - Demand Forecast
+  - Price
+  - Discount
+  - Competitor Pricing
+
+missing_value_handling: interpolate
+
+aggregate_daily:
+  groupby_cols:
+    - Date
+    - Product ID
+  agg_dict:
+    Units Sold: sum
+    Weather Condition: 
+      function: mode
+    Holiday/Promotion: max
+    Seasonality:
+      function: mode
+
+add_week_column: true
+
+aggregate_weekly:
+  groupby_cols:
+    - Week
+    - Product ID
+  agg_dict:
+    Units Sold: sum
+    Weather Condition: 
+      function: mode
+    Holiday/Promotion: max
+    Seasonality:
+      function: mode
+
+reformat_week_column: true
+
+encoding_columns:
+  - Weather Condition
+  - Seasonality
+
+train_test_split:
+  split_by: percentage
+  split_value: 0.7
+  id_column: Product ID
+  time_index_column: Week
+  target_column: Units Sold
+  future_covariate_columns:
+    - Weather Condition
+    - Holiday/Promotion
+    - Seasonality
+  past_covariate_columns: []
+
+data_file_path: data/retail_store_inventory.csv
+
+model_config: 
+  model_type: RNNModel
+  rnn_model:
+    input_chunk_length: 12  # Number of time steps to consider in the past
+    training_length: 16  # Number of time steps to train the model (duration of historical data + forecast horizon) 
+    n_epochs: 25   # To reduce training time (default: 100)
+    add_encoders:
+      cyclic:
+        future: ["month"]
+      datetime_attribute:
+        future: ["year", "month", "weekofyear"]
+    pl_trainer_kwargs:
+      accelerator: auto
+  forecasting:
+    forecast_horizon: 4
+    stride: 1
+    retrain: false
