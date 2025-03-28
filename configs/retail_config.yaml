@@ -54,6 +54,9 @@ train_test_split:
 data_file_path: data/retail_store_inventory.csv
 
 model_configurations:
+  NaiveMovingAverage:
+    input_chunk_length: 12
+    extra_args: {}
   ARIMA:
     add_encoders:
       cyclic: { future: ["month"] }

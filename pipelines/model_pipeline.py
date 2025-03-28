@@ -2,18 +2,18 @@ import os
 import yaml
 import torch
 import pandas as pd
-from darts.models import (
-    RNNModel, ARIMA, Prophet, RandomForest, TCNModel, NBEATSModel
-)
+from darts.models import RNNModel, ARIMA, Prophet, RandomForest, TCNModel, NBEATSModel, NaiveMovingAverage
+
 from darts.metrics import mape, rmse
 from darts.utils.likelihood_models import GaussianLikelihood
 
 
 MODEL_CLASSES = {
-    'RNNModel': RNNModel,
+    'NaiveMovingAverage': NaiveMovingAverage,
     'ARIMA': ARIMA,
     'Prophet': Prophet,
     'RandomForest': RandomForest,
+    'RNNModel': RNNModel,
     'TCNModel': TCNModel,
     'NBEATSModel': NBEATSModel,
 }
@@ -48,14 +48,8 @@ def train_and_evaluate_models(
         print(f"\n===== Training {model_name} =====")
         base_params = {}
 
-        if model_name == 'RNNModel':
-            base_params = {
-                'model': config.get('model', 'LSTM'),
-                'input_chunk_length': config['input_chunk_length'],
-                'training_length': config.get('training_length', 16),
-                'likelihood': GaussianLikelihood() if config.get('likelihood', 'GaussianLikelihood') == 'GaussianLikelihood' else None,
-                'random_state': config.get('random_state', 42),
-            }
+        if model_name == 'NaiveMovingAverage':
+            base_params = {'input_chunk_length': config.get('input_chunk_length', 12)}
         elif model_name == 'ARIMA':
             base_params = {'add_encoders': config.get('add_encoders', {})}
         elif model_name == 'Prophet':
@@ -72,6 +66,14 @@ def train_and_evaluate_models(
                 'output_chunk_length': config.get('output_chunk_length', 4),
                 'add_encoders': config.get('add_encoders', {})
             }
+        elif model_name == 'RNNModel':
+            base_params = {
+                'model': config.get('model', 'LSTM'),
+                'input_chunk_length': config['input_chunk_length'],
+                'training_length': config.get('training_length', 16),
+                'likelihood': GaussianLikelihood() if config.get('likelihood', 'GaussianLikelihood') == 'GaussianLikelihood' else None,
+                'random_state': config.get('random_state', 42),
+            }
         elif model_name in ['TCNModel', 'NBEATSModel']:
             base_params = {
                 'add_encoders': config.get('add_encoders', {}),
@@ -87,13 +89,18 @@ def train_and_evaluate_models(
         forecasts = []
         metrics = []
 
-        if model_name in ['ARIMA', 'Prophet']:
+        if model_name in ['NaiveMovingAverage','ARIMA', 'Prophet']:
             for idx, (train_ts, test_ts, full_ts, fcov_ts) in enumerate(zip(
                 train_series_scaled, test_series_scaled, full_series_scaled, future_covariates_scaled)):
 
                 model = instantiate_model(model_name, base_params, config.get('extra_args', {}))
-                model.fit(train_ts, future_covariates=fcov_ts)
-                forecast = model.predict(len(test_ts), future_covariates=fcov_ts)
+
+                if model_name == 'NaiveMovingAverage':
+                    model.fit(train_ts)
+                    forecast = model.predict(len(test_ts))
+                else:
+                    model.fit(train_ts, future_covariates=fcov_ts)
+                    forecast = model.predict(len(test_ts), future_covariates=fcov_ts)
 
                 # unscaled_forecast = scalers['target_scaler'].inverse_transform(forecast)
                 # unscaled_test = scalers['target_scaler'].inverse_transform(test_ts)
