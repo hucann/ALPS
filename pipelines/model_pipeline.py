@@ -51,35 +51,30 @@ def train_and_evaluate_models(
         if model_name == 'NaiveMovingAverage':
             base_params = {'input_chunk_length': config.get('input_chunk_length', 12)}
         elif model_name == 'ARIMA':
-            base_params = {'add_encoders': config.get('add_encoders', {})}
+            base_params = {}
         elif model_name == 'Prophet':
             base_params = {
                 'country_holidays': config.get('country_holidays', 'SG'),
-                'add_seasonalities': config.get('add_seasonalities', []),
-                'add_encoders': config.get('add_encoders', {})
+                'add_seasonalities': config.get('add_seasonalities', [])
             }
         elif model_name == 'RandomForest':
             base_params = {
                 'lags': config.get('lags', 4),
                 'lags_past_covariates': config.get('lags_past_covariates', 12),
                 'lags_future_covariates': config.get('lags_future_covariates', [0, 1, 2, 3]),
-                'output_chunk_length': config.get('output_chunk_length', 4),
-                'add_encoders': config.get('add_encoders', {})
+                'output_chunk_length': config.get('output_chunk_length', 4)
             }
         elif model_name == 'RNNModel':
             base_params = {
                 'model': config.get('model', 'LSTM'),
-                'input_chunk_length': config['input_chunk_length'],
+                'input_chunk_length': config.get('input_chunk_length', 12),
                 'training_length': config.get('training_length', 16),
                 'likelihood': GaussianLikelihood() if config.get('likelihood', 'GaussianLikelihood') == 'GaussianLikelihood' else None,
-                'random_state': config.get('random_state', 42),
             }
         elif model_name in ['TCNModel', 'NBEATSModel']:
             base_params = {
-                'add_encoders': config.get('add_encoders', {}),
                 'input_chunk_length': config.get('input_chunk_length', 12),
                 'output_chunk_length': config.get('output_chunk_length', 4),
-                'n_epochs': config.get('n_epochs', 20) if model_name == 'NBEATSModel' else None
             }
             base_params = {k: v for k, v in base_params.items() if v is not None}
 
