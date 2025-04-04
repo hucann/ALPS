@@ -4,3 +4,6 @@ models/saved_models/*
 
 __pycache__/
 .DS_Store
+
+Notes.md
+Agenda.md
