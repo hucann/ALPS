@@ -45,6 +45,7 @@ encoding_columns:
 
 train_test_split:
   split_value: 0.7
+  forecast_horizon: 4
   #id_column: Product ID
   #time_index_column: Week
   target_column: Units Sold
@@ -96,15 +97,15 @@ model_configurations:
   NBEATSModel:
     input_chunk_length: 12
     output_chunk_length: 4
-    n_epochs: 20
     extra_args: 
+      n_epochs: 20
       add_encoders:
         cyclic: { future: ["month"] }
         datetime_attribute: { future: ["year", "month", "weekofyear"] }
 
   RNNModel:
     input_chunk_length: 12
-    training_length: 16
+    output_chunk_length: 4
     model: LSTM
     likelihood: GaussianLikelihood
     extra_args:

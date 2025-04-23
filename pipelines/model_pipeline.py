@@ -2,10 +2,12 @@ import os
 import yaml
 import torch
 import pandas as pd
-from darts.models import RNNModel, ARIMA, Prophet, RandomForest, TCNModel, NBEATSModel, NaiveMovingAverage
+from datetime import datetime
 
+from darts.models import NaiveMovingAverage, ARIMA, Prophet, RandomForest, BlockRNNModel, TCNModel, NBEATSModel
 from darts.metrics import mape, rmse
 from darts.utils.likelihood_models import GaussianLikelihood
+from darts.utils.data import PastCovariatesSequentialDataset
 
 
 MODEL_CLASSES = {
@@ -13,7 +15,7 @@ MODEL_CLASSES = {
     'ARIMA': ARIMA,
     'Prophet': Prophet,
     'RandomForest': RandomForest,
-    'RNNModel': RNNModel,
+    'RNNModel': BlockRNNModel,
     'TCNModel': TCNModel,
     'NBEATSModel': NBEATSModel,
 }
@@ -44,6 +46,10 @@ def train_and_evaluate_models(
 ):
     model_configs = load_model_config(yaml_config_path)
 
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_output_dir = os.path.join(output_dir, f"run_{timestamp}")
+    os.makedirs(run_output_dir, exist_ok=True)
+
     for model_name, config in model_configs.items():
         print(f"\n===== Training {model_name} =====")
         base_params = {}
@@ -68,7 +74,7 @@ def train_and_evaluate_models(
             base_params = {
                 'model': config.get('model', 'LSTM'),
                 'input_chunk_length': config.get('input_chunk_length', 12),
-                'training_length': config.get('training_length', 16),
+                'output_chunk_length': config.get('output_chunk_length', 4),
                 'likelihood': GaussianLikelihood() if config.get('likelihood', 'GaussianLikelihood') == 'GaussianLikelihood' else None,
             }
         elif model_name in ['TCNModel', 'NBEATSModel']:
@@ -78,7 +84,7 @@ def train_and_evaluate_models(
             }
             base_params = {k: v for k, v in base_params.items() if v is not None}
 
-        model_dir = os.path.join(output_dir, model_name)
+        model_dir = os.path.join(run_output_dir, model_name)
         os.makedirs(model_dir, exist_ok=True)
 
         forecasts = []
@@ -115,45 +121,77 @@ def train_and_evaluate_models(
                 forecast.pd_dataframe().to_csv(os.path.join(model_dir, f'forecast_product_{idx}.csv'))
                 test_ts.pd_dataframe().to_csv(os.path.join(model_dir, f'ground_truth_product_{idx}.csv'))
 
-        else:  
-            model = instantiate_model(model_name, base_params, config.get('extra_args', {}))
+        elif model_name in ['RNNModel', 'TCNModel', 'NBEATSModel']:
+            input_chunk_length = config['input_chunk_length']
+            output_chunk_length = config['output_chunk_length'] if model_name != 'TCNModel' else 1  # TCNModel uses 1-step forecasting
 
-            # Different models support different covariates
-            if model_name == 'RandomForest':
-                model.fit(
-                    series=train_series_scaled,
-                    future_covariates=future_covariates_scaled,
-                    past_covariates=past_covariates_scaled
-                )
-            elif model_name == 'RNNModel':
-                model.fit(
-                    series=train_series_scaled,
-                    future_covariates=future_covariates_scaled,
-                    verbose=True
-                )
-            elif model_name in ['TCNModel', 'NBEATSModel']:
-                model.fit(
-                    series=train_series_scaled,
-                    past_covariates=past_covariates_scaled,
-                    verbose=True
-                )
+            dataset = PastCovariatesSequentialDataset(
+                target_series=train_series_scaled,
+                covariates=past_covariates_scaled,
+                input_chunk_length=input_chunk_length,
+                output_chunk_length=output_chunk_length
+            )
+
+            # === Inspect window ===
+            window_past_target, window_past_covariates, _, _, window_future_target = dataset[0]  # first window
+            print("\n🔍 Inspecting first training window:")
+            print("\nwindow_past_target:") 
+            print(window_past_target)
+
+            print("\nwindow_past_covariates:")
+            print(window_past_covariates)
+
+            print("\nwindow_future_target:")
+            print(window_future_target)
+            # === Inspect window ===
+
+            model = instantiate_model(model_name, base_params, config.get('extra_args', {}))
+            model.fit_from_dataset(dataset, verbose=True)
 
             for idx, full_ts in enumerate(full_series_scaled):
-                forecast_args = {
-                    'series': full_ts,
-                    'start': train_series_scaled[idx].end_time(),
-                    'forecast_horizon': 4,  # put in config 
-                    'retrain': False,
-                    'verbose': True, 
-                    'stride': 1,  # or use default 
-                }
+                forecast = model.historical_forecasts(
+                    series=full_ts,
+                    past_covariates=past_covariates_scaled[idx],
+                    start=train_series_scaled[idx].end_time(),
+                    forecast_horizon= config.get('forecast_horizon', 4),
+                    retrain=False,
+                    verbose=True
+                )
 
-                if model_name in ['RandomForest', 'RNNModel']:
-                    forecast_args['future_covariates'] = future_covariates_scaled[idx]
-                if model_name in ['RandomForest', 'TCNModel', 'NBEATSModel']:
-                    forecast_args['past_covariates'] = past_covariates_scaled[idx]
+                test_slice = full_ts.slice_intersect(forecast)
+                mape_score = mape(test_slice, forecast)
+                rmse_score = rmse(test_slice, forecast)
 
-                forecast = model.historical_forecasts(**forecast_args)
+                print(f"{model_name} - Product {idx}: MAPE = {mape_score:.2f}%  RMSE = {rmse_score:.4f}")
+
+                forecasts.append(forecast.pd_dataframe())
+                metrics.append({
+                    'product_id': idx,
+                    'mape': mape_score,
+                    'rmse': rmse_score
+                })
+
+                forecast.pd_dataframe().to_csv(os.path.join(model_dir, f'forecast_product_{idx}.csv'))
+                test_slice.pd_dataframe().to_csv(os.path.join(model_dir, f'ground_truth_product_{idx}.csv'))
+
+        else:  # RandomForest global model
+            model = instantiate_model(model_name, base_params, config.get('extra_args', {}))
+            model.fit(
+                series=train_series_scaled,
+                future_covariates=future_covariates_scaled,
+                past_covariates=past_covariates_scaled
+            )
+
+            for idx, full_ts in enumerate(full_series_scaled):
+                forecast = model.historical_forecasts(
+                    series=full_ts,
+                    future_covariates=future_covariates_scaled[idx],
+                    past_covariates=past_covariates_scaled[idx],
+                    start=train_series_scaled[idx].end_time(),
+                    forecast_horizon= config.get('forecast_horizon', 4),
+                    retrain=False,
+                    verbose=True
+                )
 
                 test_slice = full_ts.slice_intersect(forecast)
                 mape_score = mape(test_slice, forecast)
