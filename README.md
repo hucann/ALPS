@@ -1,3 +1,11 @@
+## how to run 
+1. Download [dataset](https://www.kaggle.com/datasets/anirudhchauhan/retail-store-inventory-forecasting-dataset/data) and place under folder data/
+2. Run main.py
+
+## how to modify
+- Edit `data_pipeline.py` to preprocess data given a dataset 
+- Edit `retail_config.yaml` to add additional parameter for model definition or training
+
 ## Project Structure
 
 ```
@@ -7,7 +15,7 @@ project_root/
 │   └── retail_store_inventory.csv
 │
 ├── configs/
-│   └── retail_config.yaml
+│   └── retail_config.yaml      # contains model definition and training paramters 
 │
 ├── pipelines/
 │   ├── data_pipeline.py        # contains data loading, dropping columns, aggregation, encoding
@@ -20,15 +28,18 @@ project_root/
 │
 ├── notebooks/
 │   └── exploration.ipynb       # optional for EDA or visualization
-│
+│   └── visualization_forecast.ipynb       # visualize forecast result and metric 
+│   └── regression.ipynb        # explore aggregated target VS multiple single target 
+│   └── aggregate.ipynb         # explore aggregated value as target value
+│   └── tsfel_feature_engi.ipynb       # explore automated feature engineering by TSFEL
+│   └── multivariate.ipynb      # explore multivaraite VS global model
 ├── results/
-│   └── forecasts/              # save forecast results and metrics for each model
+│   └── forecasts/              # save forecast results and metrics for each model for each experiment
 │
 ├── main.py                     # entry point script to run full workflow (load, transform, scale, train, evaluate)
 └── requirements.txt
 ```
 
----
 
 ## Workflow Summary
 
@@ -38,11 +49,9 @@ Use function `load_and_process_data` from `data_pipeline.py`
 ### 2. Data Transformation
 Split into target and covariate, train and test (in Darts TimeSeries class)
 Transformation
-- fit_transform on training data; transform on testing data
-- fit & transform for each TS
 
-### 2. Model Training & Evaluation
-Currently a single model, later build a looped model pipeline reading from a YAML or config dictionary  
+### 3. Model Training & Evaluation
+Multiple forecasting models (including NaiveMovingAverage, ARIMA, Prophet, RandomForest, TCN, NBEATS, RNN) configured via YAML config file
 Load model parameter from config file
 Use `historical_forecasts()` for evaluation 
 

@@ -1,6 +1,7 @@
 data/*
 results/forecasts/*
 models/saved_models/*
+models_test/
 
 __pycache__/
 .DS_Store
