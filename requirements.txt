@@ -1,0 +1,9 @@
+pandas == 2.2.3
+numpy == 1.26.4
+matplotlib == 3.10.1 
+
+darts == 0.34.0 
+prophet == 1.1.6
+tsfel == 0.1.9 
+
+ipywidgets == 8.1.5
