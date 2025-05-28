@@ -1,64 +1,87 @@
-## how to run 
-1. Download [dataset](https://www.kaggle.com/datasets/anirudhchauhan/retail-store-inventory-forecasting-dataset/data) and place under folder data/
-2. Run main.py
+## Overview
 
-## how to modify
-- Edit `data_pipeline.py` to preprocess data given a dataset 
-- Edit `retail_config.yaml` to add additional parameter for model definition or training
+This project forecasts SKU-level inventory using multiple time series forecasting models via the Darts library. It includes data preprocessing, feature engineering, model training, and result visualization – all configurable via YAML and modular pipelines.
 
-## Project Structure
+---
+### How to Run
+1. Download the dataset from [Kaggle](https://www.kaggle.com/datasets/anirudhchauhan/retail-store-inventory-forecasting-dataset/data) and place it under the `data/` folder as `retail_store_inventory.csv`.
+2. (Optional but recommended) Create a virtual environment (Python 3.12) and install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Run the full pipeline with:
+   ```bash
+   python main.py
+   ```
+   
+### How to Modify
+- To customize preprocessing steps (e.g., drop columns, apply filters), modify `pipelines/data_pipeline.py`.
+- To configure or switch models, tune hyperparameters, or change training parameters, update `configs/retail_config.yaml`.
 
+
+---
+### Project Structure
 ```
 project_root/
 │
-├── data/
-│   └── retail_store_inventory.csv
+├── data/                       # Raw dataset (place downloaded CSV here) 
 │
-├── configs/
-│   └── retail_config.yaml      # contains model definition and training paramters 
+├── configs/                    # YAML config for models and training  
 │
-├── pipelines/
-│   ├── data_pipeline.py        # contains data loading, dropping columns, aggregation, encoding
-│   ├── scaling_pipeline.py     # contains scaling (after converting to TimeSeries and splits train-test)
-│   ├── model_pipeline.py       # contains model definition, model training, forecasting, evaluation
-│   └── save_results.py         # contains saving of results and evaluation metrics
+├── pipelines/                  # Core pipeline scripts
+│   ├── data_pipeline.py        # Load, clean, and transform raw data
+│   ├── scaling_pipeline.py     # Apply scaling and train-test split
+│   ├── model_pipeline.py       # Define/train models, forecast, evaluate
+│   └── save_results.py         # Save forecasts and metrics
 │
-├── models/
-│   └── saved_models/           # for saving model checkpoints
-│
-├── notebooks/
-│   └── exploration.ipynb       # optional for EDA or visualization
-│   └── visualization_forecast.ipynb       # visualize forecast result and metric 
+├── notebooks/                  # Exploratory analysis and experiments
+│   └── exploration.ipynb       # general exploration
+│   └── visualization_forecast.ipynb   # visualize forecast result and metric 
 │   └── regression.ipynb        # explore aggregated target VS multiple single target 
 │   └── aggregate.ipynb         # explore aggregated value as target value
 │   └── tsfel_feature_engi.ipynb       # explore automated feature engineering by TSFEL
 │   └── multivariate.ipynb      # explore multivaraite VS global model
-├── results/
-│   └── forecasts/              # save forecast results and metrics for each model for each experiment
 │
-├── main.py                     # entry point script to run full workflow (load, transform, scale, train, evaluate)
-└── requirements.txt
+├── results/                    # Output directory for forecasts/metrics
+│   └── forecasts/              
+│
+├── main.py                     # Entry script to run full pipeline
+│
+└── requirements.txt            # Project dependencies
 ```
 
+---
+### Data & Model Pipeline
 
-## Workflow Summary
+#### 1. Data Loading & Cleaning
+- Implemented in `pipelines/data_pipeline.py` → function `load_and_process_data()`
+- Handles reading, filtering, missing values, aggregation, and encoding.
 
-### 1. Data Loading & Cleaning
-Use function `load_and_process_data` from `data_pipeline.py`
+#### 2. Data Transformation & Splitting
+- Converts data to Darts `TimeSeries` objects.
+- Splits into:
+  - Target series
+  - Past covariates (e.g. promotions, holidays)
+  - Train/test sets (time-based split)
+- Handled in `scaling_pipeline.py`
 
-### 2. Data Transformation
-Split into target and covariate, train and test (in Darts TimeSeries class)
-Transformation
+#### 3. Model Training & Evaluation
+- Models configured in `configs/retail_config.yaml`
+- Supported models: 
+  - Statistical: Naive, ARIMA, Prophet
+  - ML/DL: RandomForest, RNN (or DeepAR), NBEATS, TCN
+- Uses Darts `historical_forecasts()` for rolling evaluation.
 
-### 3. Model Training & Evaluation
-Multiple forecasting models (including NaiveMovingAverage, ARIMA, Prophet, RandomForest, TCN, NBEATS, RNN) configured via YAML config file
-Load model parameter from config file
-Use `historical_forecasts()` for evaluation 
-
-### 4. Output
-Save trained models, forecasts, and evaluation metrics into:
-- `models/`  
-- `results/`  
+#### 4. Output
+- Forecasts and evaluation metrics saved to `results/forecasts/` as `.csv` 
 
 
+---
+### Key Concepts from Darts Library
+- **Covariates**: exogenous variables that can improve forecasting. See [Covariates in Darts](https://unit8co.github.io/darts/userguide/covariates.html).
+- **Global vs Local Models**: global models learn patterns across series. [Read more](https://unit8.com/resources/training-forecasting-models)
+- **Windowing**: controlled by: 
+  - `input_chunk_length` – lookback/context window
+  - `output_chunk_length` – forecast/prediction horizon
+  - To customize slicing, use [SequentialDataset](https://unit8co.github.io/darts/generated_api/darts.utils.data.sequential_dataset.html) and `fit_from_dataset()` instead of `fit()`. See implementation examples in `notebooks/aggregate.ipynb`.
 
