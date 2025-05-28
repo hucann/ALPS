@@ -98,7 +98,7 @@ model_configurations:
     input_chunk_length: 12
     output_chunk_length: 4
     extra_args: 
-      n_epochs: 20
+      n_epochs: 10
       add_encoders:
         cyclic: { future: ["month"] }
         datetime_attribute: { future: ["year", "month", "weekofyear"] }
