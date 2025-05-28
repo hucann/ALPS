@@ -4,11 +4,11 @@ import torch
 import pandas as pd
 from datetime import datetime
 
-from darts.models import NaiveMovingAverage, ARIMA, Prophet, RandomForest, BlockRNNModel, TCNModel, NBEATSModel
+from darts import TimeSeries
 from darts.metrics import mape, rmse
 from darts.utils.likelihood_models import GaussianLikelihood
 from darts.utils.data import PastCovariatesSequentialDataset
-
+from darts.models import NaiveMovingAverage, ARIMA, Prophet, RandomForest, BlockRNNModel, TCNModel, NBEATSModel
 
 MODEL_CLASSES = {
     'NaiveMovingAverage': NaiveMovingAverage,
@@ -103,23 +103,42 @@ def train_and_evaluate_models(
                     model.fit(train_ts, future_covariates=fcov_ts)
                     forecast = model.predict(len(test_ts), future_covariates=fcov_ts)
 
-                # unscaled_forecast = scalers['target_scaler'].inverse_transform(forecast)
-                # unscaled_test = scalers['target_scaler'].inverse_transform(test_ts)
+                # Save unaggregated forecast and ground truth
+                forecast.pd_dataframe().to_csv(os.path.join(model_dir, f'forecast_product_{idx}.csv'))
+                test_ts.pd_dataframe().to_csv(os.path.join(model_dir, f'ground_truth_product_{idx}.csv'))
 
-                mape_score = mape(test_ts, forecast)
-                rmse_score = rmse(test_ts, forecast)
+                # Convert to DataFrames for aggregation
+                forecast_df = forecast.pd_dataframe()
+                truth_df = test_ts.pd_dataframe()
 
-                print(f"{model_name} - Product {idx}: MAPE = {mape_score:.2f}%  RMSE = {rmse_score:.4f}")
+                # Compute 4-week rolling sums (aligned to the DL model logic)
+                forecast_df['Future_4Week_Sum'] = (
+                    forecast_df['Units Sold'][::-1]
+                    .rolling(window=4)
+                    .sum()[::-1]
+                )
+                truth_df['Future_4Week_Sum'] = (
+                    truth_df['Units Sold'][::-1]
+                    .rolling(window=4)
+                    .sum()[::-1]
+                )
 
-                forecasts.append(forecast.pd_dataframe())
+                # Drop last 3 values (incomplete window)
+                aggregated_forecast = TimeSeries.from_dataframe(forecast_df[:-3], value_cols='Future_4Week_Sum')
+                aggregated_truth = TimeSeries.from_dataframe(truth_df[:-3], value_cols='Future_4Week_Sum')
+
+                # Evaluate
+                mape_score = mape(aggregated_truth, aggregated_forecast)
+                rmse_score = rmse(aggregated_truth, aggregated_forecast)
+
+                print(f"{model_name} - Product {idx}: MAPE (4-wk sum) = {mape_score:.2f}%  RMSE = {rmse_score:.4f}")
+
+                forecasts.append(forecast_df)
                 metrics.append({
                     'product_id': idx,
                     'mape': mape_score,
                     'rmse': rmse_score
                 })
-
-                forecast.pd_dataframe().to_csv(os.path.join(model_dir, f'forecast_product_{idx}.csv'))
-                test_ts.pd_dataframe().to_csv(os.path.join(model_dir, f'ground_truth_product_{idx}.csv'))
 
         elif model_name in ['RNNModel', 'TCNModel', 'NBEATSModel']:
             input_chunk_length = config['input_chunk_length']
@@ -159,21 +178,36 @@ def train_and_evaluate_models(
                 )
 
                 test_slice = full_ts.slice_intersect(forecast)
-                mape_score = mape(test_slice, forecast)
-                rmse_score = rmse(test_slice, forecast)
+                truth_df = test_slice.pd_dataframe()
+                forecast_df = forecast.pd_dataframe()
+                forecast_df.to_csv(os.path.join(model_dir, f'forecast_product_{idx}.csv'))
+                truth_df.to_csv(os.path.join(model_dir, f'ground_truth_product_{idx}.csv'))
+
+                # Compute future 4 weeks
+                truth_df['Future_4Week_Sum'] = (
+                    truth_df['Units Sold'][::-1]
+                    .rolling(window=4)
+                    .sum()[::-1]
+                )
+                truth = TimeSeries.from_dataframe(truth_df[:-3], value_cols='Future_4Week_Sum')
+                forecast_df['Future_4Week_Sum'] = (
+                    forecast_df['Units Sold'][::-1]
+                    .rolling(window=4)
+                    .sum()[::-1]
+                )
+                forecast = TimeSeries.from_dataframe(forecast_df[:-3], value_cols='Future_4Week_Sum')
+                
+                mape_score = mape(truth, forecast)
+                rmse_score = rmse(truth, forecast)
 
                 print(f"{model_name} - Product {idx}: MAPE = {mape_score:.2f}%  RMSE = {rmse_score:.4f}")
 
-                forecasts.append(forecast.pd_dataframe())
                 metrics.append({
-                    'product_id': idx,
-                    'mape': mape_score,
-                    'rmse': rmse_score
-                })
-
-                forecast.pd_dataframe().to_csv(os.path.join(model_dir, f'forecast_product_{idx}.csv'))
-                test_slice.pd_dataframe().to_csv(os.path.join(model_dir, f'ground_truth_product_{idx}.csv'))
-
+                        'product_id': idx,
+                        'mape': mape_score,
+                        'rmse': rmse_score
+                        })
+                
         else:  # RandomForest global model
             model = instantiate_model(model_name, base_params, config.get('extra_args', {}))
             model.fit(
@@ -194,19 +228,34 @@ def train_and_evaluate_models(
                 )
 
                 test_slice = full_ts.slice_intersect(forecast)
-                mape_score = mape(test_slice, forecast)
-                rmse_score = rmse(test_slice, forecast)
+                truth_df = test_slice.pd_dataframe()
+                forecast_df = forecast.pd_dataframe()
+                forecast_df.to_csv(os.path.join(model_dir, f'forecast_product_{idx}.csv'))
+                truth_df.to_csv(os.path.join(model_dir, f'ground_truth_product_{idx}.csv'))
+
+                # Compute future 4 weeks
+                truth_df['Future_4Week_Sum'] = (
+                    truth_df['Units Sold'][::-1]
+                    .rolling(window=4)
+                    .sum()[::-1]
+                )
+                truth = TimeSeries.from_dataframe(truth_df[:-3], value_cols='Future_4Week_Sum')
+                forecast_df['Future_4Week_Sum'] = (
+                    forecast_df['Units Sold'][::-1]
+                    .rolling(window=4)
+                    .sum()[::-1]
+                )
+                forecast = TimeSeries.from_dataframe(forecast_df[:-3], value_cols='Future_4Week_Sum')
+                
+                mape_score = mape(truth, forecast)
+                rmse_score = rmse(truth, forecast)
 
                 print(f"{model_name} - Product {idx}: MAPE = {mape_score:.2f}%  RMSE = {rmse_score:.4f}")
 
-                forecasts.append(forecast.pd_dataframe())
                 metrics.append({
-                    'product_id': idx,
-                    'mape': mape_score,
-                    'rmse': rmse_score
-                })
-
-                forecast.pd_dataframe().to_csv(os.path.join(model_dir, f'forecast_product_{idx}.csv'))
-                test_slice.pd_dataframe().to_csv(os.path.join(model_dir, f'ground_truth_product_{idx}.csv'))
+                        'product_id': idx,
+                        'mape': mape_score,
+                        'rmse': rmse_score
+                        })
 
         pd.DataFrame(metrics).to_csv(os.path.join(model_dir, 'metrics_summary.csv'), index=False)
